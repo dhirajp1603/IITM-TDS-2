@@ -25,14 +25,16 @@ import pandas as pd
 import seaborn as sns
 import chardet
 import matplotlib.pyplot as plt
+import chardet
 from dateutil import parser
 import subprocess
 import json
 
 
 # Environment variable for AI Proxy token
-AIPROXY_TOKEN = os.getenv("AIPROXY_TOKEN")
-
+AIPROXY_TOKEN = os.environ["AIPROXY_TOKEN"]
+if not AIPROXY_TOKEN:
+    raise EnvironmentError("AIPROXY_TOKEN is not set. Please set it before running the script.")
 
 # Function definitions
 def detect_encoding(file_path):
@@ -168,13 +170,19 @@ def regression_analysis(df):
 
 def clustering_analysis(df):
     """Perform clustering analysis on numeric columns."""
-    numeric_data = df.select_dtypes(include=[np.number])
-    numeric_data = numeric_data.dropna()
+    numeric_data = df.select_dtypes(include=[np.number]).dropna()
+    datetime_columns = df.select_dtypes(include=[np.datetime64])
+    for col in datetime_columns:
+        numeric_data[col] = (df[col] - df[col].min()).dt.days
     if numeric_data.empty:
-        return None
-    kmeans = KMeans(n_clusters=3, random_state=42)
-    numeric_data['Cluster'] = kmeans.fit_predict(numeric_data)
-    return numeric_data['Cluster'], numeric_data.index
+        return None, None
+    try:
+        kmeans = KMeans(n_clusters=3, random_state=42)
+        numeric_data['Cluster'] = kmeans.fit_predict(numeric_data)
+        return numeric_data['Cluster'], numeric_data.index
+    except Exception as e:
+        print(f"Error while Clustering: {e}")
+        return None,None
 
 def summarize_correlation(df):
     """Summarize key insights from the correlation matrix."""
@@ -258,7 +266,7 @@ def visualize_advanced(df, output_folder):
     visualizations = []
 
     # Correlation Heatmap
-    numeric_data = df.select_dtypes(include=[np.number])
+    numeric_data = df.select_dtypes(include=[np.number]).dropna()
     if not numeric_data.empty:
         plt.figure(figsize=(10, 8))
         sns.heatmap(numeric_data.corr(), annot=True, cmap="coolwarm")
@@ -279,21 +287,21 @@ def visualize_advanced(df, output_folder):
     # Clustering Scatter Plot
     clusters, valid_indices = clustering_analysis(df)
     summary = generate_summary(df,clusters)
-    if clusters is not None:
-        df_with_clusters = df.loc[valid_indices].copy()
+    if clusters is not None and len(valid_indices) > 1:
+        df_with_clusters = numeric_data.loc[valid_indices].copy()
         df_with_clusters["Cluster"] = clusters.values
         plt.figure(figsize=(10, 8))
         for cluster in np.unique(clusters):
             subset = df_with_clusters[df_with_clusters["Cluster"] == cluster]
             # Ensure that the values are numeric and handle NaNs or infinite values
-        subset.iloc[:, 0] = pd.to_numeric(subset.iloc[:, 0], errors='coerce')
-        subset.iloc[:, 1] = pd.to_numeric(subset.iloc[:, 1], errors='coerce')
+            subset.iloc[:, 0] = pd.to_numeric(subset.iloc[:, 0], errors='coerce')
+            subset.iloc[:, 1] = pd.to_numeric(subset.iloc[:, 1], errors='coerce')
 
-        subset = subset.dropna(subset=[subset.columns[0], subset.columns[1]])
-        subset = subset[~subset.isin([np.inf, -np.inf]).any(axis=1)]
+            subset = subset.dropna(subset=[subset.columns[0], subset.columns[1]])
+            subset = subset[~subset.isin([np.inf, -np.inf]).any(axis=1)]
 
         # Now plot the data
-        plt.scatter(subset.iloc[:, 0].astype(float), subset.iloc[:, 1].astype(float), label=f"Cluster {cluster}")
+            plt.scatter(subset.iloc[:, 0].astype(float), subset.iloc[:, 1].astype(float), label=f"Cluster {cluster}")
         plt.legend()
         file_path = os.path.join(output_folder, "clustering_scatter.png")
         plt.savefig(file_path)
