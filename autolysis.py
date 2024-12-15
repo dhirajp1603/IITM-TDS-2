@@ -225,7 +225,7 @@ async def main(file_path):
 
     # Generate narrative
     print("Generating narrative using LLM...")
-    narrative = await generate_narrative(analysis, token, file_path)
+    narrative = await generate_narrative(analysis, token, file_path,visualizations)
 
     if narrative != "Narrative generation failed due to an error.":
         await save_narrative_with_images(narrative, output_dir)
