@@ -143,8 +143,8 @@ async def analyze_data(df, token):
     return analysis, suggestions
 
 async def visualize_data(df, output_dir):
-    """Generate and save visualizations."""
-    sns.set(style="whitegrid")
+    """Generate and save enhanced visualizations."""
+    sns.set(style="whitegrid", palette="pastel")
     numeric_columns = df.select_dtypes(include=['number']).columns
 
     # Select main columns for distribution based on importance
@@ -153,25 +153,43 @@ async def visualize_data(df, output_dir):
     # Ensure output directory exists
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Enhanced visualizations (distribution plots, heatmap)
+    # Enhanced visualizations (distribution plots with legends)
     for column in selected_columns:
         plt.figure(figsize=(6, 6))
-        sns.histplot(df[column].dropna(), kde=True, color='skyblue')
-        plt.title(f'Distribution of {column}')
-        plt.xlabel(column)
-        plt.ylabel('Frequency')
+        sns.histplot(df[column].dropna(), kde=True, color='skyblue', label='Data Distribution')
+        plt.title(f'Distribution of {column}', fontsize=14)
+        plt.xlabel(f'{column}', fontsize=12)
+        plt.ylabel('Frequency', fontsize=12)
+        plt.legend(loc='upper right', fontsize=10)
         file_name = output_dir / f'{column}_distribution.png'
         plt.savefig(file_name, dpi=100)
         plt.close()
 
+    # Correlation Heatmap with annotations
     if len(numeric_columns) > 1:
-        plt.figure(figsize=(8, 8))
+        plt.figure(figsize=(10, 10))
         corr = df[numeric_columns].corr()
-        sns.heatmap(corr, annot=True, cmap='coolwarm', square=True)
-        plt.title('Correlation Heatmap')
+        heatmap = sns.heatmap(
+            corr, annot=True, cmap='coolwarm', square=True, fmt=".2f",
+            cbar_kws={'label': 'Correlation Coefficient'}
+        )
+        plt.title('Correlation Heatmap', fontsize=16)
+        plt.xlabel('Features', fontsize=12)
+        plt.ylabel('Features', fontsize=12)
+
+        # Annotate maximum and minimum correlations
+        max_corr = corr.unstack().dropna().sort_values(ascending=False)
+        max_corr_pair = max_corr.index[1]  # Exclude self-correlation
+        max_corr_value = max_corr[1]
+        heatmap.text(
+            *corr.columns.get_loc(max_corr_pair[1]), f"{max_corr_value:.2f}", 
+            color='black', fontsize=10, weight='bold'
+        )
+
         file_name = output_dir / 'correlation_heatmap.png'
         plt.savefig(file_name, dpi=100)
         plt.close()
+
 
 async def save_narrative_with_images(narrative, output_dir):
     """Save narrative to README.md and embed image links."""
@@ -225,7 +243,7 @@ async def main(file_path):
 
     # Generate narrative
     print("Generating narrative using LLM...")
-    narrative = await generate_narrative(analysis, token, file_path,visualizations)
+    narrative = await generate_narrative(analysis, token, file_path,)
 
     if narrative != "Narrative generation failed due to an error.":
         await save_narrative_with_images(narrative, output_dir)
