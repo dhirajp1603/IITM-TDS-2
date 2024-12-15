@@ -63,61 +63,26 @@ async def async_post_request(headers, data):
             print(f"Error during request: {e}")
             raise
 
-async def generate_narrative(analysis, token, file_path):
-    """Generate narrative using LLM."""
-    headers = {
-        'Authorization': f'Bearer {token}',
-        'Content-Type': 'application/json'
-    }
-
+async def generate_dynamic_prompt(df, analysis, user_input):
+    """Generate a dynamic prompt based on user input and data."""
     prompt = (
-        f"You are a data analyst. Provide a detailed narrative based on the following data analysis results for the file '{file_path.name}':\n\n"
-        f"Column Names & Types: {list(analysis['summary'].keys())}\n\n"
-        f"Summary Statistics: {analysis['summary']}\n\n"
-        f"Missing Values: {analysis['missing_values']}\n\n"
-        f"Correlation Matrix: {analysis['correlation']}\n\n"
-        "Please provide insights into trends, outliers, anomalies, or patterns. "
-        "Suggest further analyses like clustering or anomaly detection. "
-        "Discuss how these trends may impact future decisions."
+        f"You are a data analyst. Based on the following dataset and user input, provide an insightful analysis. "
+        f"User's Request: {user_input}\n\n"
+        f"Columns: {list(df.columns)}\n"
+        f"Data Types: {df.dtypes.to_dict()}\n"
+        f"Summary Statistics: {analysis['summary']}\n"
+        f"Missing Values: {analysis['missing_values']}\n"
+        f"Correlation Matrix: {analysis['correlation']}\n"
+        "Make recommendations for further analysis, visualization, and predictive modeling techniques. "
+        "Take into account potential limitations and suggest ways to handle missing data and outliers."
     )
+    return prompt
 
-    data = {
-        "model": "gpt-4o-mini",
-        "messages": [{"role": "user", "content": prompt}]
-    }
-
-    return await async_post_request(headers, data)
-
-async def analyze_data(df, token):
-    """Use LLM to suggest and perform data analysis."""
+async def analyze_and_generate_narrative(df, token, user_input):
+    """Analyze data, generate prompts dynamically based on user input, and generate narrative."""
     if df.empty:
         raise ValueError("Error: Dataset is empty.")
 
-    # Enhanced prompt for better LLM analysis suggestions
-    prompt = (
-        f"You are a data analyst. Given the following dataset information, provide an analysis plan and suggest useful techniques:\n\n"
-        f"Columns: {list(df.columns)}\n"
-        f"Data Types: {df.dtypes.to_dict()}\n"
-        f"First 5 rows of data:\n{df.head()}\n\n"
-        "Suggest data analysis techniques, such as correlation, regression, anomaly detection, clustering, or others. "
-        "Consider missing values, categorical variables, and scalability."
-    )
-
-    headers = {
-        'Authorization': f'Bearer {token}',
-        'Content-Type': 'application/json'
-    }
-    data = {
-        "model": "gpt-4o-mini",
-        "messages": [{"role": "user", "content": prompt}]
-    }
-
-    try:
-        suggestions = await async_post_request(headers, data)
-    except Exception as e:
-        suggestions = f"Error fetching suggestions: {e}"
-
-    # Basic analysis (summary statistics, missing values, correlations)
     numeric_df = df.select_dtypes(include=['number'])
     analysis = {
         'summary': df.describe(include='all').to_dict(),
@@ -125,19 +90,29 @@ async def analyze_data(df, token):
         'correlation': numeric_df.corr().to_dict() if not numeric_df.empty else {}
     }
 
-    # Hypothesis testing example (if 'A' and 'B' columns exist)
-    if 'A' in df.columns and 'B' in df.columns:
-        t_stat, p_value = stats.ttest_ind(df['A'].dropna(), df['B'].dropna())
-        analysis['hypothesis_test'] = {
-            't_stat': t_stat,
-            'p_value': p_value
-        }
+    # Generate dynamic prompt based on user input
+    prompt = await generate_dynamic_prompt(df, analysis, user_input)
 
-    print("Data analysis complete.")
-    return analysis, suggestions
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json'
+    }
 
-async def visualize_data(df, output_dir):
-    """Generate and save visualizations."""
+    data = {
+        "model": "gpt-4o-mini",
+        "messages": [{"role": "user", "content": prompt}]
+    }
+
+    try:
+        narrative = await async_post_request(headers, data)
+    except Exception as e:
+        narrative = f"Error generating narrative: {e}"
+
+    print("Analysis and narrative generation complete.")
+    return analysis, narrative
+
+async def visualize_data_with_integration(df, output_dir, analysis):
+    """Generate visualizations and integrate them into the narrative."""
     sns.set(style="whitegrid")
     numeric_columns = df.select_dtypes(include=['number']).columns
 
@@ -147,7 +122,7 @@ async def visualize_data(df, output_dir):
     # Ensure output directory exists
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Enhanced visualizations (distribution plots, heatmap)
+    # Visualize distribution and correlations
     for column in selected_columns:
         plt.figure(figsize=(6, 6))
         sns.histplot(df[column].dropna(), kde=True, color='skyblue')
@@ -167,15 +142,19 @@ async def visualize_data(df, output_dir):
         plt.savefig(file_name, dpi=100)
         plt.close()
 
-async def save_narrative_with_images(narrative, output_dir):
-    """Save narrative to README.md and embed image links."""
+    # Integrating visuals with the narrative in the README
+    readme_content = f"### Visualizations:\n"
+    for img in output_dir.glob('*.png'):
+        readme_content += f"![{img.name}]({img.name})\n"
+    return readme_content
+
+async def save_narrative_and_visuals(narrative, output_dir, readme_content):
+    """Save narrative and visualizations into a README file."""
     readme_path = output_dir / 'README.md'
-    image_links = "\n".join(
-        [f"![{img.name}]({img.name})" for img in output_dir.glob('*.png')]
-    )
     with open(readme_path, 'w', encoding='utf-8') as f:
-        f.write(narrative + "\n\n" + image_links)
-    print(f"Narrative successfully written to {readme_path}")
+        f.write(narrative + "\n\n" + readme_content)
+    print(f"Narrative with visuals successfully written to {readme_path}")
+
 
 async def main(file_path):
     print("Starting autolysis process...")
@@ -204,7 +183,7 @@ async def main(file_path):
     # Analyze data with LLM insights
     print("Analyzing data...")
     try:
-        analysis, suggestions = await analyze_data(df, token)
+        analysis, suggestions = await analyze_and_generate_narrative(df, token, "Provide analysis and suggestions")
     except ValueError as e:
         print(e)
         sys.exit(1)
@@ -215,14 +194,14 @@ async def main(file_path):
 
     # Generate visualizations with LLM suggestions
     print("Generating visualizations...")
-    await visualize_data(df, output_dir)
+    readme_content = await visualize_data_with_integration(df, output_dir, analysis)
 
     # Generate narrative
     print("Generating narrative using LLM...")
-    narrative = await generate_narrative(analysis, token, file_path)
+    narrative = await analyze_and_generate_narrative(df, token, file_path)
 
     if narrative != "Narrative generation failed due to an error.":
-        await save_narrative_with_images(narrative, output_dir)
+        await save_narrative_and_visuals(narrative, output_dir, readme_content)
     else:
         print("Narrative generation failed.")
 
