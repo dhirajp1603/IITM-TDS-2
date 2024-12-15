@@ -154,13 +154,13 @@ async def visualize_data(df, output_dir):
     sns.set(style="whitegrid")
     numeric_columns = df.select_dtypes(include=['number']).columns
 
-    # Select columns for visualization
+    # Select main columns for distribution based on importance
     selected_columns = numeric_columns[:3] if len(numeric_columns) >= 3 else numeric_columns
 
     # Ensure output directory exists
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate visualizations (distribution plots and heatmap)
+    # Enhanced visualizations (distribution plots, heatmap)
     for column in selected_columns:
         plt.figure(figsize=(6, 6))
         sns.histplot(df[column].dropna(), kde=True, color='skyblue')
@@ -169,7 +169,6 @@ async def visualize_data(df, output_dir):
         plt.ylabel('Frequency')
         file_name = output_dir / f'{column}_distribution.png'
         plt.savefig(file_name, dpi=100)
-        print(f"Saved distribution plot: {file_name}")
         plt.close()
 
     if len(numeric_columns) > 1:
@@ -179,7 +178,6 @@ async def visualize_data(df, output_dir):
         plt.title('Correlation Heatmap')
         file_name = output_dir / 'correlation_heatmap.png'
         plt.savefig(file_name, dpi=100)
-        print(f"Saved correlation heatmap: {file_name}")
         plt.close()
 
 async def save_narrative_with_images(narrative, output_dir):
@@ -193,50 +191,54 @@ async def save_narrative_with_images(narrative, output_dir):
     print(f"Narrative successfully written to {readme_path}")
 
 async def main(file_path):
-    """Main function to orchestrate the data analysis workflow."""
     print("Starting autolysis process...")
 
+    # Ensure input file exists
     file_path = Path(file_path)
     if not file_path.is_file():
         print(f"Error: File '{file_path}' does not exist.")
         sys.exit(1)
 
+    # Load token
     try:
         token = get_token()
     except Exception as e:
         print(e)
         sys.exit(1)
 
+    # Load dataset
     try:
         df = await load_data(file_path)
     except FileNotFoundError as e:
         print(e)
         sys.exit(1)
     print("Dataset loaded successfully.")
-
-    print("Analyzing data...")
+    user_input = "Please provide an analysis of the dataset."
     try:
-        analysis, suggestions = await analyze_data(df, token)
+        analysis, suggestions = await analyze_data(df, token, user_input)
     except ValueError as e:
         print(e)
         sys.exit(1)
+    print("Analyzing data...")
 
-    print(f"LLM Analysis Suggestions: {suggestions}")
-
+    # Create output directory
     output_dir = Path(file_path.stem)
     output_dir.mkdir(exist_ok=True)
 
+    # Generate visualizations with LLM suggestions
     print("Generating visualizations...")
     await visualize_data(df, output_dir)
 
+    # Generate narrative
     print("Generating narrative using LLM...")
-    narrative = await generate_narrative(analysis, token, file_path)
+    narrative = await generate_narrative(df, analysis, token, file_path, user_input)
 
     if narrative != "Narrative generation failed due to an error.":
         await save_narrative_with_images(narrative, output_dir)
     else:
         print("Narrative generation failed.")
 
+# Execute script
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Usage: python script.py <file_path>")
