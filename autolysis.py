@@ -198,12 +198,13 @@ async def main(file_path):
 
     # Generate narrative
     print("Generating narrative using LLM...")
-    narrative = await analyze_and_generate_narrative(df, token, file_path)
+    analysis, narrative = await analyze_and_generate_narrative(df, token, file_path)
 
     if narrative != "Narrative generation failed due to an error.":
         await save_narrative_and_visuals(narrative, output_dir, readme_content)
     else:
         print("Narrative generation failed.")
+
 
 # Execute script
 if __name__ == "__main__":
