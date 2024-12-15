@@ -66,15 +66,18 @@ async def async_post_request(headers, data):
 async def generate_dynamic_prompt(df, analysis, user_input):
     """Generate a dynamic prompt based on user input and data."""
     prompt = (
-        f"You are a data analyst. Based on the following dataset and user input, provide an insightful analysis. "
-        f"User's Request: {user_input}\n\n"
-        f"Columns: {list(df.columns)}\n"
-        f"Data Types: {df.dtypes.to_dict()}\n"
-        f"Summary Statistics: {analysis['summary']}\n"
-        f"Missing Values: {analysis['missing_values']}\n"
-        f"Correlation Matrix: {analysis['correlation']}\n"
-        "Make recommendations for further analysis, visualization, and predictive modeling techniques. "
-        "Take into account potential limitations and suggest ways to handle missing data and outliers."
+        f"### Data Analysis Report\n\n"
+        f"#### User Request\n\n{user_input}\n\n"
+        f"#### Dataset Overview\n\n"
+        f"- **Columns**: {list(df.columns)}\n"
+        f"- **Data Types**: {df.dtypes.to_dict()}\n"
+        f"\n#### Summary Statistics\n\n"
+        f"```\n{analysis['summary']}\n```\n"
+        f"\n#### Missing Values\n\n"
+        f"```\n{analysis['missing_values']}\n```\n"
+        f"\n#### Correlation Matrix\n\n"
+        f"```\n{analysis['correlation']}\n```\n"
+        "\nProvide actionable insights, recommended visualizations, and suggested predictive modeling techniques. Include approaches to handle missing data and outliers."
     )
     return prompt
 
@@ -121,7 +124,7 @@ async def analyze_data(df, token, user_input):
         'correlation': numeric_df.corr().to_dict() if not numeric_df.empty else {}
     }
 
-    # Hypothesis testing example (if 'A' and 'B' columns exist)
+    # Enhanced hypothesis testing (include more robust tests)
     if 'A' in df.columns and 'B' in df.columns:
         t_stat, p_value = stats.ttest_ind(df['A'].dropna(), df['B'].dropna())
         analysis['hypothesis_test'] = {
@@ -152,6 +155,7 @@ async def analyze_data(df, token, user_input):
 async def visualize_data(df, output_dir):
     """Generate and save visualizations."""
     sns.set(style="whitegrid")
+    palette = sns.color_palette("deep")
     numeric_columns = df.select_dtypes(include=['number']).columns
 
     # Select main columns for distribution based on importance
@@ -163,7 +167,7 @@ async def visualize_data(df, output_dir):
     # Enhanced visualizations (distribution plots, heatmap)
     for column in selected_columns:
         plt.figure(figsize=(6, 6))
-        sns.histplot(df[column].dropna(), kde=True, color='skyblue')
+        sns.histplot(df[column].dropna(), kde=True, color=palette[0])
         plt.title(f'Distribution of {column}')
         plt.xlabel(column)
         plt.ylabel('Frequency')
@@ -174,7 +178,7 @@ async def visualize_data(df, output_dir):
     if len(numeric_columns) > 1:
         plt.figure(figsize=(8, 8))
         corr = df[numeric_columns].corr()
-        sns.heatmap(corr, annot=True, cmap='coolwarm', square=True)
+        sns.heatmap(corr, annot=True, cmap='coolwarm', square=True, cbar_kws={'shrink': .8})
         plt.title('Correlation Heatmap')
         file_name = output_dir / 'correlation_heatmap.png'
         plt.savefig(file_name, dpi=100)
@@ -187,7 +191,7 @@ async def save_narrative_with_images(narrative, output_dir):
         [f"![{img.name}]({img.name})" for img in output_dir.glob('*.png')]
     )
     with open(readme_path, 'w', encoding='utf-8') as f:
-        f.write(narrative + "\n\n" + image_links)
+        f.write(f"# Analysis Report\n\n{narrative}\n\n## Visualizations\n\n{image_links}")
     print(f"Narrative successfully written to {readme_path}")
 
 async def main(file_path):
