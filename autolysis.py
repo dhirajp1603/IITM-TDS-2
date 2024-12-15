@@ -221,7 +221,7 @@ async def main(file_path):
 
     # Generate visualizations with LLM suggestions
     print("Generating visualizations...")
-    await visualize_data(df, output_dir)
+    visualizations = await visualize_data(df, output_dir)  # Collect visualizations
 
     # Generate narrative
     print("Generating narrative using LLM...")
