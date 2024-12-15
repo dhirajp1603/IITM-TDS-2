@@ -1,18 +1,3 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = [
-#   "seaborn",
-#   "pandas",
-#   "matplotlib",
-#   "httpx",
-#   "chardet",
-#   "ipykernel",
-#   "openai",
-#   "numpy",
-#   "scipy",
-# ]
-# ///
-
 import os
 import sys
 import pandas as pd
@@ -46,7 +31,7 @@ async def load_data(file_path):
         result = chardet.detect(f.read())
     encoding = result['encoding']
     print(f"Detected file encoding: {encoding}")
-    return pd.read_csv(file_path, encoding=encoding or 'utf-8')
+    return pd.read_csv(file_path, encoding=encoding or 'utf-8', nrows=1000)
 
 async def async_post_request(headers, data):
     """Async function to make HTTP requests."""
@@ -78,8 +63,8 @@ async def generate_dynamic_prompt(df, analysis, user_input):
     )
     return prompt
 
-async def analyze_and_generate_narrative(df, token, user_input):
-    """Analyze data, generate prompts dynamically based on user input, and generate narrative."""
+async def generate_narrative(df, analysis, token, file_path, user_input):
+    """Generate narrative using LLM."""
     if df.empty:
         raise ValueError("Error: Dataset is empty.")
 
@@ -104,17 +89,54 @@ async def analyze_and_generate_narrative(df, token, user_input):
     }
 
     try:
-        narrative = await async_post_request(headers, data)
+        return await async_post_request(headers, data)
     except Exception as e:
-        narrative = f"Error generating narrative: {e}"
+        return f"Error generating narrative: {e}"
 
-    print("Analysis and narrative generation complete.")
-    return analysis, narrative
+async def analyze_data(df, token, user_input):
+    """Use LLM to suggest and perform data analysis."""
+    if df.empty:
+        raise ValueError("Error: Dataset is empty.")
 
-async def visualize_data_with_integration(df, output_dir, analysis):
-    """Generate visualizations with richer color schemes and integration into the narrative."""
-    # Set a color palette that is accessible, use a varied color palette for histograms
-    sns.set(style="whitegrid", palette="husl")  # 'husl' is a more colorful palette
+    # Basic analysis (summary statistics, missing values, correlations)
+    numeric_df = df.select_dtypes(include=['number'])
+    analysis = {
+        'summary': df.describe(include='all').to_dict(),
+        'missing_values': df.isnull().sum().to_dict(),
+        'correlation': numeric_df.corr().to_dict() if not numeric_df.empty else {}
+    }
+
+    # Hypothesis testing example (if 'A' and 'B' columns exist)
+    if 'A' in df.columns and 'B' in df.columns:
+        t_stat, p_value = stats.ttest_ind(df['A'].dropna(), df['B'].dropna())
+        analysis['hypothesis_test'] = {
+            't_stat': t_stat,
+            'p_value': p_value
+        }
+
+    # Generate dynamic prompt based on user input
+    prompt = await generate_dynamic_prompt(df, analysis, user_input)
+
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json'
+    }
+    data = {
+        "model": "gpt-4o-mini",
+        "messages": [{"role": "user", "content": prompt}]
+    }
+
+    try:
+        suggestions = await async_post_request(headers, data)
+    except Exception as e:
+        suggestions = f"Error fetching suggestions: {e}"
+
+    print("Data analysis complete.")
+    return analysis, suggestions
+
+async def visualize_data(df, output_dir):
+    """Generate and save visualizations."""
+    sns.set(style="whitegrid")
     numeric_columns = df.select_dtypes(include=['number']).columns
 
     # Select main columns for distribution based on importance
@@ -123,16 +145,13 @@ async def visualize_data_with_integration(df, output_dir, analysis):
     # Ensure output directory exists
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Visualize distribution and correlations
-    for i, column in enumerate(selected_columns):
+    # Enhanced visualizations (distribution plots, heatmap)
+    for column in selected_columns:
         plt.figure(figsize=(6, 6))
-        # Use a different color for each column
-        color = sns.color_palette("husl", len(selected_columns))[i]  # 'husl' palette for varying colors
-        sns.histplot(df[column].dropna(), kde=True, color=color, stat='density')
-        plt.title(f'Distribution of {column}', fontsize=14)
-        plt.xlabel(column, fontsize=12)
-        plt.ylabel('Density', fontsize=12)
-        plt.grid(True, linestyle='--', alpha=0.7)
+        sns.histplot(df[column].dropna(), kde=True, color='skyblue')
+        plt.title(f'Distribution of {column}')
+        plt.xlabel(column)
+        plt.ylabel('Frequency')
         file_name = output_dir / f'{column}_distribution.png'
         plt.savefig(file_name, dpi=100)
         plt.close()
@@ -140,28 +159,21 @@ async def visualize_data_with_integration(df, output_dir, analysis):
     if len(numeric_columns) > 1:
         plt.figure(figsize=(8, 8))
         corr = df[numeric_columns].corr()
-        # Use a more vibrant color map for the heatmap
-        sns.heatmap(corr, annot=True, cmap='viridis', square=True, fmt=".2f", annot_kws={'size': 10}, cbar_kws={'label': 'Correlation coefficient'})
-        plt.title('Correlation Heatmap', fontsize=14)
-        plt.tight_layout()  # Adjust layout for better readability
+        sns.heatmap(corr, annot=True, cmap='coolwarm', square=True)
+        plt.title('Correlation Heatmap')
         file_name = output_dir / 'correlation_heatmap.png'
         plt.savefig(file_name, dpi=100)
         plt.close()
 
-    # Integrating visuals with the narrative in the README
-    readme_content = f"### Visualizations:\n"
-    for img in output_dir.glob('*.png'):
-        readme_content += f"![{img.name}]({img.name})\n"
-    return readme_content
-
-
-async def save_narrative_and_visuals(narrative, output_dir, readme_content):
-    """Save narrative and visualizations into a README file."""
+async def save_narrative_with_images(narrative, output_dir):
+    """Save narrative to README.md and embed image links."""
     readme_path = output_dir / 'README.md'
+    image_links = "\n".join(
+        [f"![{img.name}]({img.name})" for img in output_dir.glob('*.png')]
+    )
     with open(readme_path, 'w', encoding='utf-8') as f:
-        f.write(narrative + "\n\n" + readme_content)
-    print(f"Narrative with visuals successfully written to {readme_path}")
-
+        f.write(narrative + "\n\n" + image_links)
+    print(f"Narrative successfully written to {readme_path}")
 
 async def main(file_path):
     print("Starting autolysis process...")
@@ -186,14 +198,13 @@ async def main(file_path):
         print(e)
         sys.exit(1)
     print("Dataset loaded successfully.")
-
-    # Analyze data with LLM insights
-    print("Analyzing data...")
+    user_input = "Please provide an analysis of the dataset."
     try:
-        analysis, suggestions = await analyze_and_generate_narrative(df, token, "Provide analysis and suggestions")
+        analysis, suggestions = await analyze_data(df, token, user_input)
     except ValueError as e:
         print(e)
         sys.exit(1)
+    print("Analyzing data...")
 
     # Create output directory
     output_dir = Path(file_path.stem)
@@ -201,17 +212,16 @@ async def main(file_path):
 
     # Generate visualizations with LLM suggestions
     print("Generating visualizations...")
-    readme_content = await visualize_data_with_integration(df, output_dir, analysis)
+    await visualize_data(df, output_dir)
 
     # Generate narrative
     print("Generating narrative using LLM...")
-    analysis, narrative = await analyze_and_generate_narrative(df, token, file_path)
+    narrative = await generate_narrative(df, analysis, token, file_path, user_input)
 
     if narrative != "Narrative generation failed due to an error.":
-        await save_narrative_and_visuals(narrative, output_dir, readme_content)
+        await save_narrative_with_images(narrative, output_dir)
     else:
         print("Narrative generation failed.")
-
 
 # Execute script
 if __name__ == "__main__":
@@ -219,4 +229,3 @@ if __name__ == "__main__":
         print("Usage: python script.py <file_path>")
         sys.exit(1)
     asyncio.run(main(sys.argv[1]))
-
