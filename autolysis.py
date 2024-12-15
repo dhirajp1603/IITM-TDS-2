@@ -112,8 +112,9 @@ async def analyze_and_generate_narrative(df, token, user_input):
     return analysis, narrative
 
 async def visualize_data_with_integration(df, output_dir, analysis):
-    """Generate visualizations and integrate them into the narrative."""
-    sns.set(style="whitegrid")
+    """Generate visualizations with richer color schemes and integration into the narrative."""
+    # Set a color palette that is accessible, use a varied color palette for histograms
+    sns.set(style="whitegrid", palette="husl")  # 'husl' is a more colorful palette
     numeric_columns = df.select_dtypes(include=['number']).columns
 
     # Select main columns for distribution based on importance
@@ -123,12 +124,15 @@ async def visualize_data_with_integration(df, output_dir, analysis):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Visualize distribution and correlations
-    for column in selected_columns:
+    for i, column in enumerate(selected_columns):
         plt.figure(figsize=(6, 6))
-        sns.histplot(df[column].dropna(), kde=True, color='skyblue')
-        plt.title(f'Distribution of {column}')
-        plt.xlabel(column)
-        plt.ylabel('Frequency')
+        # Use a different color for each column
+        color = sns.color_palette("husl", len(selected_columns))[i]  # 'husl' palette for varying colors
+        sns.histplot(df[column].dropna(), kde=True, color=color, stat='density')
+        plt.title(f'Distribution of {column}', fontsize=14)
+        plt.xlabel(column, fontsize=12)
+        plt.ylabel('Density', fontsize=12)
+        plt.grid(True, linestyle='--', alpha=0.7)
         file_name = output_dir / f'{column}_distribution.png'
         plt.savefig(file_name, dpi=100)
         plt.close()
@@ -136,8 +140,10 @@ async def visualize_data_with_integration(df, output_dir, analysis):
     if len(numeric_columns) > 1:
         plt.figure(figsize=(8, 8))
         corr = df[numeric_columns].corr()
-        sns.heatmap(corr, annot=True, cmap='coolwarm', square=True)
-        plt.title('Correlation Heatmap')
+        # Use a more vibrant color map for the heatmap
+        sns.heatmap(corr, annot=True, cmap='viridis', square=True, fmt=".2f", annot_kws={'size': 10}, cbar_kws={'label': 'Correlation coefficient'})
+        plt.title('Correlation Heatmap', fontsize=14)
+        plt.tight_layout()  # Adjust layout for better readability
         file_name = output_dir / 'correlation_heatmap.png'
         plt.savefig(file_name, dpi=100)
         plt.close()
@@ -147,6 +153,7 @@ async def visualize_data_with_integration(df, output_dir, analysis):
     for img in output_dir.glob('*.png'):
         readme_content += f"![{img.name}]({img.name})\n"
     return readme_content
+
 
 async def save_narrative_and_visuals(narrative, output_dir, readme_content):
     """Save narrative and visualizations into a README file."""
