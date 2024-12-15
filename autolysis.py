@@ -165,30 +165,34 @@ async def visualize_data(df, output_dir):
         plt.savefig(file_name, dpi=100)
         plt.close()
 
-    # Correlation Heatmap with annotations
-    if len(numeric_columns) > 1:
-        plt.figure(figsize=(10, 10))
-        corr = df[numeric_columns].corr()
-        heatmap = sns.heatmap(
-            corr, annot=True, cmap='coolwarm', square=True, fmt=".2f",
-            cbar_kws={'label': 'Correlation Coefficient'}
-        )
-        plt.title('Correlation Heatmap', fontsize=16)
-        plt.xlabel('Features', fontsize=12)
-        plt.ylabel('Features', fontsize=12)
+    # Updated annotations for heatmap
+if len(numeric_columns) > 1:
+    plt.figure(figsize=(10, 10))
+    corr = df[numeric_columns].corr()
+    heatmap = sns.heatmap(
+        corr, annot=True, cmap='coolwarm', square=True, fmt=".2f",
+        cbar_kws={'label': 'Correlation Coefficient'}
+    )
+    plt.title('Correlation Heatmap', fontsize=16)
+    plt.xlabel('Features', fontsize=12)
+    plt.ylabel('Features', fontsize=12)
 
-        # Annotate maximum and minimum correlations
-        max_corr = corr.unstack().dropna().sort_values(ascending=False)
-        max_corr_pair = max_corr.index[1]  # Exclude self-correlation
-        max_corr_value = max_corr[1]
-        heatmap.text(
-            *corr.columns.get_loc(max_corr_pair[1]), f"{max_corr_value:.2f}", 
-            color='black', fontsize=10, weight='bold'
-        )
+    # Identify maximum and minimum correlations (excluding self-correlation)
+    max_corr = corr.unstack().dropna().sort_values(ascending=False)
+    max_corr_pair = max_corr.index[1]  # Exclude self-correlation
+    max_corr_value = max_corr.iloc[1]  # Use iloc to access positional value
 
-        file_name = output_dir / 'correlation_heatmap.png'
-        plt.savefig(file_name, dpi=100)
-        plt.close()
+    # Annotate the heatmap for the maximum correlation
+    max_corr_coords = (corr.columns.get_loc(max_corr_pair[0]), corr.index.get_loc(max_corr_pair[1]))
+    heatmap.text(
+        max_corr_coords[1] + 0.5, max_corr_coords[0] + 0.5,
+        f"{max_corr_value:.2f}", color='black', fontsize=10, weight='bold', ha='center', va='center'
+    )
+
+    file_name = output_dir / 'correlation_heatmap.png'
+    plt.savefig(file_name, dpi=100)
+    plt.close()
+
 
 
 async def save_narrative_with_images(narrative, output_dir):
